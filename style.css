@@ -1,0 +1,655 @@
+/* ==========================================================================
+   GLOBAL VARIABLES & BASE STYLES
+   ========================================================================== */
+:root {
+    --bg-light: #f8f9fa;
+    --bg-hover: #e9ecef;
+    --border-gray: #ced4da;
+    --text-dark: #495057;
+    --accent-blue: #007bff;
+    --font-main: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-main);
+    background-color: #808080;
+    overflow: hidden;
+}
+
+/* ==========================================================================
+   MAIN HEADER & LAYOUT SECTIONS
+   ========================================================================== */
+.main-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background-color: var(--bg-light);
+    border-bottom: 1px solid var(--border-gray);
+    gap: 12px;
+}
+
+.section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.file-mgmt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+}
+
+.file-controls-top {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* ==========================================================================
+   BUTTON COMPONENTS & INTERACTIVE STATES
+   ========================================================================== */
+.btn {
+    background: white;
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    color: var(--text-dark);
+    padding: 6px 12px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn:hover {
+    background-color: var(--bg-hover);
+}
+
+.btn-icon {
+    padding: 6px;
+    width: 34px;
+    height: 34px;
+}
+
+.color-container {
+    position: relative;
+    display: inline-block;
+}
+
+.color-picker {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.btn-color {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 2px solid white;
+    box-shadow: 0 0 0 1px var(--border-gray);
+    padding: 0;
+}
+
+.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    filter: grayscale(1);
+}
+
+.active {
+    background-color: #e2e6ea;
+    border-color: #adb5bd;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* ==========================================================================
+   INPUTS, SELECTION & TOOLTIPS
+   ========================================================================== */
+.search-container {
+    display: flex;
+    align-items: center;
+    background: white;
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    padding-inline-start: 8px;
+}
+
+.search-bar {
+    border: none;
+    outline: none;
+    padding: 6px;
+    width: 180px;
+}
+
+.match-counter {
+    font-size: 11px;
+    color: #888;
+    margin-inline: 8px;
+    white-space: nowrap;
+}
+
+.font-dropdown {
+    padding: 6px;
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    background: white;
+    max-width: 150px;
+}
+
+.number-select-writable {
+    border: none;
+    outline: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    appearance: none;
+    -webkit-appearance: none;
+    height: 100%;
+    box-sizing: border-box;
+}
+
+.number-select-writable::-webkit-outer-spin-button,
+.number-select-writable::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.page-counter {
+    font-size: 12px;
+    color: var(--text-dark);
+    padding-inline-start: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.page-counter .number-input {
+    width: 35px;
+    padding: 2px 4px;
+    text-align: center;
+    border: 1px solid var(--border-gray);
+    border-radius: 4px;
+}
+
+.spinner-container {
+    display: flex;
+    align-items: center;
+    background: white;
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    overflow: hidden;
+    height: 34px;
+}
+
+.spinner-arrows {
+    display: flex;
+    flex-direction: column;
+    border-inline-start: 1px solid var(--border-gray);
+    height: 100%;
+}
+
+.spinner-arrows button {
+    border: none;
+    background: #f8f9fa;
+    color: #666;
+    font-size: 7px;
+    padding: 0 4px;
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s;
+}
+
+.spinner-arrows button:hover {
+    background: #e9ecef;
+}
+
+.spinner-arrows .spin-up {
+    border-bottom: 1px solid var(--border-gray);
+}
+
+.size-selector .number-select-writable {
+    width: 40px;
+    padding-inline: 4px;
+}
+
+.size-selector .number-select-writable::-webkit-calendar-picker-indicator {
+    display: none !important;
+}
+
+.zoom-selector {
+    display: flex;
+    align-items: center;
+    background-color: white;
+    border: 1px solid var(--border-gray);
+    border-radius: 6px;
+    height: 34px;
+    overflow: hidden;
+}
+
+.zoom-selector .number-select-writable {
+    width: 75px; 
+    height: 100%;
+    padding: 0 8px;
+    border: none;
+    outline: none;
+    background: transparent;
+    direction: ltr;
+}
+
+.zoom-selector .number-select-writable::-webkit-calendar-picker-indicator {
+    opacity: 0.6;
+    cursor: pointer;
+} 
+
+[data-tooltip] {
+    position: relative;
+}
+
+[data-tooltip]:hover::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: -35px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #333;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 100;
+}
+
+/* ==========================================================================
+   WORKSPACE CONTAINER & EMPTY/DROP ZONE STATES
+   ========================================================================== */
+.app-content {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 69px);
+}
+
+.empty-state {
+    width: 100%;
+    max-width: 600px;
+    height: 300px;
+    background-color: var(--bg-light);
+    border: 2px dashed var(--border-gray);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin: auto;
+    margin-top: 40px;
+}
+
+.empty-state:hover {
+    background-color: var(--bg-hover);
+    border-color: var(--accent-blue);
+}
+
+.empty-state-content {
+    text-align: center;
+    color: var(--text-dark);
+}
+
+.upload-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.empty-state h2 {
+    margin: 0 0 8px 0;
+    font-weight: 600;
+}
+
+.empty-state p {
+    margin: 0;
+    font-size: 14px;
+    opacity: 0.7;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* ==========================================================================
+   PDF CANVAS WORKSPACE & CORE RENDERING LAYERS
+   ========================================================================== */
+#pdf-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+    padding: 20px;
+    width: 100%;
+    overflow-y: auto;
+    height: calc(100vh - 84px);
+    direction: ltr;
+}
+
+.pdf-page-wrapper {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: flex-start;
+    gap: 12px;
+    width: fit-content;
+    margin: 0 auto;
+}
+
+.pdf-page-sidebar {
+    width: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.sidebar-page-num {
+    font-size: 18px;
+    font-weight: 700;
+    color: #000000;
+    margin-bottom: 6px;
+    line-height: 1;
+}
+
+.sidebar-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 0.15s ease;
+}
+
+.sidebar-delete-btn:hover {
+    background-color: rgba(255, 0, 0, 0.15);
+}
+
+.sidebar-drag-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%); 
+    cursor: grab;
+    color: #222222;
+    opacity: 0.35;
+    transition: opacity 0.15s ease;
+    padding: 8px;
+}
+
+.sidebar-drag-handle:hover {
+    opacity: 0.85;
+}
+
+.sidebar-drag-handle:active {
+    cursor: grabbing;
+}
+
+.drag-preview {
+    position: fixed;
+    pointer-events: none;
+    opacity: 0.6;
+    z-index: 1000;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    border: 1px solid rgba(0,0,0,0.15);
+}
+
+.pdf-page-skeleton {
+    background: linear-gradient(90deg, #ffffff 25%, #f0f0f0 50%, #ffffff 75%);
+    background-size: 200% 100%;
+    animation: loading-pulse 2s infinite;
+    background-color: white;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+    flex-shrink: 0;
+    overflow: hidden;
+    display: block; 
+    margin: 0 auto;
+    position: relative;
+    user-select: none;
+}
+
+.pdf-page-canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    pointer-events: none;
+}
+
+.pdf-highlight-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 1;
+}
+
+.textLayer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    opacity: 1;
+    line-height: 1;
+    z-index: 2;
+    user-select: text;
+    pointer-events: auto;
+}
+
+.pdf-page-rendered {
+    animation: none;
+    background: white;
+}
+
+@keyframes loading-pulse {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.pdf-highlight-match {
+    position: absolute;
+    background-color: rgba(255, 150, 0, 0.4);
+    border-radius: 2px;
+    pointer-events: none;
+}
+
+.pdf-highlight-match.current-match {
+    background-color: rgba(255, 68, 0, 0.65) !important;
+    z-index: 3;
+}
+
+.pdf-redaction-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* ==========================================================================
+   INTERACTIVE REDACTION TOOLS & ACTIVE MODES
+   ========================================================================== */
+.tool-active .pdf-page-skeleton .textLayer,
+.tool-active .pdf-page-skeleton .textLayer * {
+    pointer-events: none !important;
+    user-select: none !important;
+}
+
+.tool-active-rect .pdf-page-skeleton {
+    cursor: crosshair !important;
+}
+
+.tool-active-paint .pdf-page-skeleton {
+    cursor: none !important;
+}
+
+.brush-cursor-preview {
+    position: fixed;
+    border: 1px solid rgba(128, 128, 128, 0.8);
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    z-index: 999;
+    display: none;
+}
+
+.tool-active-text .pdf-page-skeleton {
+    cursor: text !important;
+}
+
+.pdf-rect-preview {
+    position: absolute;
+    width: 0px;
+    height: 0px;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.pdf-redaction-rect {
+    box-sizing: border-box;
+    pointer-events: none;
+}
+
+.paint-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.paint-svg-preview {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.pdf-text-textarea {
+    position: absolute;
+    background: transparent;
+    border: none;
+    outline: 1px dashed rgba(128, 128, 128, 0.7);
+    resize: none;
+    overflow: hidden;
+    white-space: pre;
+    padding: 0;
+    margin: 0;
+    z-index: 10;
+}
+
+.pdf-redaction-text {
+    position: absolute;
+    white-space: pre;
+    line-height: 1.2;
+    padding: 0;
+    margin: 0;
+    z-index: 4;
+}
+
+/* ==========================================================================
+   LOGO WIDGETS & LOCALIZATION (RTL)
+   ========================================================================== */
+.logo-widget {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 9999;
+    direction: ltr !important; 
+}
+
+.logo-box {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.logo-img {
+    width: 60px;
+    height: auto;
+    display: block;
+}
+
+.logo-text {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(-10px);
+    transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
+    pointer-events: none; 
+    font-family: sans-serif;
+    color: white;
+    background-color: #444444;
+    padding: 6px 12px;
+    border-radius: 4px;
+}
+
+.line-1 {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.line-2 {
+    font-size: 12px;
+}
+
+.logo-box:hover + .logo-text {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
+}
+
+[dir="rtl"] .main-header {
+    text-align: right;
+}
+
+[dir="rtl"] .empty-state-content {
+    direction: rtl;
+}
+
+.toggle-lang {
+    margin-inline-start: auto;
+}
