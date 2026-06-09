@@ -43,6 +43,7 @@ let fontList = [
     ];
 let activeFont = null;
 let activeColor = '#000000';
+let localFontsLoaded = false;
 
 // Tool drawing
 let isDrawingRect = false;
@@ -78,39 +79,44 @@ function executeAction(actionInstance) {
     //console.log(undoStack);
 }
 
-// Checking if the modern Query Local Fonts API is supported
-initFonts();
-async function initFonts() {
-    if ('queryLocalFonts' in window) {
-        try {
-            // Asking for user's fonts list
-            const availableFonts = await window.queryLocalFonts();
-            fontList = [];
-            
-            // Extracting unique family names to avoid duplicates (e.g., Arial Bold, Arial Italic)
-            const uniqueFamilies = new Set();
-            availableFonts.forEach(font => {
-                uniqueFamilies.add(font.family);
-            });
-            fontList = Array.from(uniqueFamilies);
-
-            // Sorting fonts alphabetically
-            fontList.sort();
-            populateFonts();
-        } catch (err) {
-            console.warn("Local fonts access denied or failed, falling back to standard web fonts.", err);
-            populateFonts();
-        }
-    } else {
-        console.log("window.queryLocalFonts is not supported by this browser. Using fallbacks.");
-        populateFonts();
-    }
-}
-
 
 // Populating fonts selector
 const fontOptionsContainer = document.getElementById('font-options');
+populateFonts();
+fontOptionsContainer.addEventListener('mousedown', async (e) => {
+    // If already attempted loading local fonts, don't trigger the prompt again
+    if (localFontsLoaded) return;
+    
+    // Checking if the browser even supports the local fonts API
+    if ('queryLocalFonts' in window) {
+        try {
+            // Making request for user's font list
+            const localFonts = await window.queryLocalFonts();
+            
+            if (localFonts && localFonts.length > 0) {
+                // Extracting unique family names from the local system fonts descriptor array
+                const uniqueNames = [...new Set(localFonts.map(f => f.family))].sort();
+                
+                // Merging fontList with the new system fonts, removing duplicates
+                fontList = [...new Set([...fontList, ...uniqueNames])];
+
+                // Re-rendering font list with new fonts
+                populateFonts();
+            }
+        } catch (err) {
+            console.warn("Local font permission denied or aborted:", err);
+        } finally {
+            localFontsLoaded = true;
+        }
+    } else {
+        console.log("Local Font Access API is not supported in this browser.");
+        localFontsLoaded = true;
+    }
+});
+
 function populateFonts() {
+    fontOptionsContainer.innerHTML = '';
+    fontList.sort();
     fontList.forEach(fontName => {
         const option = document.createElement('option');
         option.value = fontName;
