@@ -37,6 +37,7 @@ class DeletePageAction extends BaseAction {
         }
 
         AppManager.refreshUI();
+        return this.originalIndex;
     }
 
     undo() {
@@ -62,7 +63,10 @@ class MovePageAction extends BaseAction {
         this.toIndex = toIndex;
     }
 
-    execute() {this.performMove(this.fromIndex, this.toIndex);}
+    execute() {
+        this.performMove(this.fromIndex, this.toIndex);
+        return this.toIndex;
+    }
 
     undo() {
         this.performMove(this.toIndex, this.fromIndex);
@@ -107,7 +111,7 @@ class AddFileAction extends BaseAction {
         this.startIndex = startIndex;
     }
 
-    execute() {/*Done in loadPdf function*/}
+    execute() {/*Done in loadPDF*/}
 
     undo() {
         const container = AppManager.getContainer();
@@ -147,6 +151,8 @@ class RedactionAction extends BaseAction {
         if (pageObj.isLoaded) {
             applyRedactions(pageObj);
         }
+
+        return pages.indexOf(pageObj);
     }
 
     undo() {
@@ -185,6 +191,9 @@ class RedactAllAction extends BaseAction {
             this.actionList.push(redaction);
         });
 
+        const firstPageId = this.actionList[0].pageId;
+        const pages = AppManager.getPages();
+        return pages.findIndex(p => p.id === firstPageId);
     }
 
     undo() {

@@ -16,6 +16,7 @@ let originalFileName = 'document.pdf';
 let currentSearchQuery = '';
 let allMatches = [];
 let currentMatchIndex = -1;
+let skipFirstLetter = false;
 
 // Page dragging
 let isDragging = false;
@@ -61,9 +62,10 @@ let textStartX = 0;
 let textStartY = 0;
 let isCancelingText = false;
 
-// Undo stack
+// Undo & redo stack
 const container = document.getElementById('pdf-container');
 let undoStack = [];
+let redoStack = [];
 const AppManager = {
     getPages: () => pdfPages,
     getContainer: () => container,
@@ -73,10 +75,20 @@ const AppManager = {
         loadPagesInRange();
     }
 };
-function executeAction(actionInstance) {
-    actionInstance.execute();
+function executeAction(actionInstance, newAction) {
+    // Adding action to undo stack
     undoStack.push(actionInstance);
-    //console.log(undoStack);
+
+    const targetIndex = actionInstance.execute();
+
+    if (newAction) {
+        // If a new action (not a redo) was executed, clearing redo list
+        redoStack = [];
+    } else {
+        // Jumping to page of re-done action if not already on that page
+        if (targetIndex + 1 !== pageNum) jumpToPage(targetIndex);
+    }
+    //console.log(undoStack, redoStack);
 }
 
 
@@ -147,9 +159,12 @@ const translations = {
         exporting: 'Exporting...',
         exportErr: 'An error occurred while exporting the PDF.',
         langTip: 'Switch Language',
+        helpTip: 'Help',
         pages: 'pages',
         pagesOf: 'of',
-        redactAllTip: 'Redact all matches',
+        redactCurrentTip: 'Redact current match',
+        redactFromTip: 'Redact all matches from here',
+        skipFirstTip: 'Skip redacting first letter?',
         searchPlacehold: 'Search...',
         matches: ' matches',
         searchPrevTip: 'Previous',
@@ -176,9 +191,12 @@ const translations = {
         exporting: 'מייצא...',
         exportErr: 'שגיאה בייצוא הקובץ.',
         langTip: 'החלף שפה',
+        helpTip: 'עזרה',
         pages: 'דפים',
         pagesOf: 'מתוך',
-        redactAllTip: 'השחר את כל ההתאמות',
+        redactCurrentTip: 'השחר התאמה זאת',
+        redactFromTip: 'השחר כל התאמות מפה',
+        skipFirstTip: 'דלג השחרת אות ראשונה?',
         searchPlacehold: 'חפש...',
         matches: ' התאמות',
         searchPrevTip: 'קודם',
@@ -227,9 +245,12 @@ function applyLanguage(l=null) {
     document.getElementById('export-btn').innerText = t.export;
     document.getElementById('lang-btn').innerText = l;
     document.getElementById('lang-btn').dataset.tooltip = t.langTip;
+    document.getElementById('help-btn').dataset.tooltip = t.helpTip;
     document.getElementById('pages-total-text').innerText = t.pages;
     document.getElementById('pages-total-text-of').innerText = t.pagesOf;
-    document.getElementById('redact-all-btn').dataset.tooltip = t.redactAllTip;
+    document.getElementById('redact-current-btn').dataset.tooltip = t.redactCurrentTip;
+    document.getElementById('redact-from-btn').dataset.tooltip = t.redactFromTip;
+    document.getElementById('skip-first-btn').dataset.tooltip = t.skipFirstTip;
     document.getElementById('search-bar').placeholder = t.searchPlacehold;
     document.getElementById('search-matches-text').innerText = t.matches;
     document.getElementById('search-prev-btn').dataset.tooltip = t.searchPrevTip;
@@ -283,7 +304,7 @@ async function loadPDF(file) {
     const lastPageIndex = pdfPages.length;
 
     changeStateLoaded(true);
-    executeAction(new AddFileAction(pdfPages.length));
+    executeAction(new AddFileAction(pdfPages.length, file), true);
 
     // Iterating through pages and adding them to the pages list
     for (let i = 1; i <= pdf.numPages; i++) {
@@ -321,7 +342,7 @@ async function loadPDF(file) {
         deleteBtn.dataset.pageId = id;
         deleteBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            executeAction(new DeletePageAction(id));
+            executeAction(new DeletePageAction(id), true);
         });
 
         // Drag Handler
@@ -516,26 +537,28 @@ function applyHighlights(pageObj) {
             const leftOffset = unscaledLeftOffset * scalingRatio;
             const matchWidth = unscaledMatchWidth * scalingRatio;
 
+            // Detecting RTL to fix horizontal mapping orientation
+            const highlightLeft = /[\u0590-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(item.str) ? tx[4] + totalWidth - leftOffset - matchWidth : tx[4] + leftOffset;
+
             const highlight = document.createElement('div');
             highlight.className = 'pdf-highlight-match';
 
             // Current match highlight
             if (
-                allMatches[currentMatchIndex] &&
-                allMatches[currentMatchIndex].pageObj.id === pageObj.id &&
-                allMatches[currentMatchIndex].item === item &&
-                allMatches[currentMatchIndex].startIdx === startIdx
+            allMatches[currentMatchIndex] &&
+            allMatches[currentMatchIndex].pageObj.id === pageObj.id &&
+            allMatches[currentMatchIndex].item === item &&
+            allMatches[currentMatchIndex].startIdx === startIdx
             ) {
-                highlight.classList.add('current-match');
+            highlight.classList.add('current-match');
             }
-            
-            highlight.style.left = `${tx[4] + leftOffset}px`;
+
+            highlight.style.left = `${highlightLeft}px`;
             highlight.style.top = `${tx[5] - (height * 0.82)}px`;
             highlight.style.width = `${matchWidth}px`;
             highlight.style.height = `${height}px`;
 
             highlightLayerDiv.appendChild(highlight);
-
             startIdx += queryLower.length;
         }
     });
@@ -605,14 +628,12 @@ function applyRedactions(pageObj) {
 // Updating the matches to the search query to a list for iterating over matches
 const totalNumEl = document.getElementById('total-matches-num');
 const currentNumEl = document.getElementById('current-match-num');
-const redactAllBtn = document.getElementById('redact-all-btn');
 function updateMatchesList() {
     allMatches = [];
     if (!currentSearchQuery || !currentSearchQuery.trim()) {
         currentMatchIndex = -1;
         totalNumEl.textContent = '0';
         currentNumEl.textContent = '0';
-        redactAllBtn.classList.add('disabled');
         return;
     }
 
@@ -641,11 +662,9 @@ function updateMatchesList() {
     if (allMatches.length > 0) {
         currentMatchIndex = 0;
         currentNumEl.textContent = '1';
-        redactAllBtn.classList.remove('disabled');
     } else {
         currentMatchIndex = -1;
         currentNumEl.textContent = '0';
-        redactAllBtn.classList.add('disabled');
     }
 }
 
@@ -1098,7 +1117,7 @@ window.addEventListener('mouseup', () => {
         const newIndex = pdfPages.indexOf(targetPageObj);
         
         if (oldIndex !== newIndex) {
-            executeAction(new MovePageAction(oldIndex, newIndex));
+            executeAction(new MovePageAction(oldIndex, newIndex), true);
             
             // Scrolling back to previous position
             requestAnimationFrame(() => {
@@ -1191,42 +1210,6 @@ document.getElementById('color-picker').addEventListener('input', (e) => {
     activeColor = selectedColor;
     colorBtn.style.backgroundColor = selectedColor;
     updateActiveTextboxStyles()
-});
-
-// Undo action
-document.addEventListener('keydown', (e) => {
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
-        if (undoStack.length === 0) return;
-        e.preventDefault();
-
-        // If there's an active textbox, removing it instead of undoing action from stack
-        if (activeTextboxEl && document.activeElement === activeTextboxEl) {
-            isCancelingText = true;
-            activeTextboxEl.blur();
-            isCancelingText = false;
-            return;
-        }
-
-        // Removing action from stack
-        const actionToUndo = undoStack.pop();
-        const targetIndex = actionToUndo.undo();
-
-        // Jumping to undo location
-        if (targetIndex + 1 !== pageNum) {
-            if (targetIndex >= pdfPages.length) {
-                // Fallback if target index is out of range
-                container.scrollTop = container.scrollHeight;
-            } else {
-                const targetedPage = pdfPages[targetIndex];
-                if (targetedPage && targetedPage.wrapper) {
-                    container.scrollTop = targetedPage.wrapper.offsetTop - container.offsetTop;
-                }
-            }
-        }
-
-        if (undoStack.length === 0) changeStateLoaded(false);
-        //console.log(undoStack);
-    }
 });
 
 // Custom paint brush cursor update
@@ -1381,7 +1364,7 @@ window.addEventListener('mouseup', (e) => {
                     height: height,
                     color: activeColor
                 };
-                executeAction(new RedactionAction(drawingPageObj.id, rectData));
+                executeAction(new RedactionAction(drawingPageObj.id, rectData), true);
             }
             break;
 
@@ -1403,7 +1386,7 @@ window.addEventListener('mouseup', (e) => {
                 color: activeColor,
                 size: toolSize
             };
-            executeAction(new RedactionAction(drawingPageObj.id, data));
+            executeAction(new RedactionAction(drawingPageObj.id, data), true);
             break;
         
         case 'text':
@@ -1483,7 +1466,7 @@ window.addEventListener('mouseup', (e) => {
                             size: toolSize,
                             font: activeFont
                         };
-                        executeAction(new RedactionAction(targetPageId, data));
+                        executeAction(new RedactionAction(targetPageId, data), true);
                     }
                     textarea.remove();
                     setTimeout(() => {activeTextboxEl = null;}, 50);
@@ -1519,59 +1502,111 @@ function updateActiveTextboxStyles() {
     }
 }
 
-redactAllBtn.addEventListener('click', () => {
+
+// Function for taking a search match, calculating the rect boundaries and returning the rect data of it for redaction
+function genMatchRectData(matchIndex) {
+    const match = allMatches[matchIndex];
+    const pageObj = match.pageObj;
+    const item = match.item;
+    const startIdx = match.startIdx;
+    const scale = pageObj.viewport.scale;
+
+    // Calculating match bounds
+    const tx = pdfjsLib.Util.transform(pageObj.viewport.transform, item.transform);
+    const totalWidth = item.width * scale;
+    const height = item.height * scale;
+
+    metricMeasurer.font = `${height}px sans-serif`;
+    const canvasFullWidth = metricMeasurer.measureText(item.str).width;
+    const scalingRatio = canvasFullWidth > 0 ? (totalWidth / canvasFullWidth) : 1;
+
+    // Detecting RTL based the first character of the query
+    const isRTL = /[\u0590-\u07FF\uFB1D-\uFDFD\uFE70-\uFEFC]/.test(currentSearchQuery.charAt(0));
+
+    let textBeforeMatch = item.str.substring(0, startIdx);
+    let targetMatchText = item.str.substring(startIdx, startIdx + currentSearchQuery.length);
+
+    // Adjusting string splits if skipping the first letter
+    if (skipFirstLetter && currentSearchQuery.length > 1) {
+        textBeforeMatch = item.str.substring(0, startIdx + 1);
+        targetMatchText = item.str.substring(startIdx + 1, startIdx + currentSearchQuery.length);
+    }
+
+    const unscaledLeftOffset = metricMeasurer.measureText(textBeforeMatch).width;
+    const unscaledMatchWidth = metricMeasurer.measureText(targetMatchText).width;
+
+    const leftOffset = unscaledLeftOffset * scalingRatio;
+    const matchWidth = unscaledMatchWidth * scalingRatio;
+
+    // RTL positioning maps right-to-left
+    const highlightLeft = isRTL ? tx[4] + totalWidth - leftOffset - matchWidth : tx[4] + leftOffset;
+    const highlightTop = tx[5] - (height * 0.82);
+
+    // Adding paddingto bounds
+    const padding = Math.max(Math.min(0.1 * height, 5), 2);
+    let paddedX, paddedWidth;
+
+    if (skipFirstLetter) {
+        // Skipping padding side of skipped first character
+        if (isRTL) {
+            paddedX = highlightLeft - padding;
+            paddedWidth = matchWidth + padding;
+        } else {
+            paddedX = highlightLeft;
+            paddedWidth = matchWidth + padding;
+        }
+    } else {
+        paddedX = highlightLeft - padding;
+        paddedWidth = matchWidth + (padding * 2);
+    }
+
+    const paddedY = highlightTop - padding;
+    const paddedHeight = height + (padding * 2);
+
+    return {
+        id: `rect-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        type: 'rect',
+        x: Math.max(0, paddedX),
+        y: Math.max(0, paddedY),
+        width: paddedWidth,
+        height: paddedHeight,
+        color: activeColor,
+        pageId: pageObj.id
+    };
+}
+
+// Redact current button
+document.getElementById('redact-current-btn').addEventListener('click', () => {
+    if (!currentSearchQuery || !currentSearchQuery.trim() || allMatches.length === 0) return;
+
+    // Getting rectangle data and executing redaction action for it
+    const rectData = genMatchRectData(currentMatchIndex);
+    executeAction(new RedactionAction(rectData.pageId, rectData), true);
+
+    // Moving to next redaction
+    navigateMatch(1);
+});
+
+// Redact from button
+document.getElementById('redact-from-btn').addEventListener('click', () => {
     if (!currentSearchQuery || !currentSearchQuery.trim() || allMatches.length === 0 || !(confirm(translations[lang]['redactAllWarning']))) return;
+    const dataList = [];
 
-    const padding = 5;
-    const queryLength = currentSearchQuery.length;
+    // Iterating over all search matches starting at the current match index to skip all matches before it
+    for (let i = currentMatchIndex; i < allMatches.length; i++) {dataList.push(genMatchRectData(i))};
 
-    const dataList = allMatches.map(match => {
-        const pageObj = match.pageObj;
-        const item = match.item;
-        const startIdx = match.startIdx;
-        const scale = pageObj.viewport.scale;
+    // Executing redact all action with list of match redactions
+    executeAction(new RedactAllAction(dataList), true);
+});
 
-        // Calculating match bounds
-        const tx = pdfjsLib.Util.transform(pageObj.viewport.transform, item.transform);
-        const totalWidth = item.width * scale;
-        const height = item.height * scale;
+// Skip first letter button toggle
+const skipFirstBtn = document.getElementById('skip-first-btn');
+skipFirstBtn.addEventListener('click', () => {
+    // Toggling variable
+    skipFirstLetter = !skipFirstLetter;
 
-        metricMeasurer.font = `${height}px sans-serif`;
-        const canvasFullWidth = metricMeasurer.measureText(item.str).width;
-        const scalingRatio = canvasFullWidth > 0 ? (totalWidth / canvasFullWidth) : 1;
-
-        const textBeforeMatch = item.str.substring(0, startIdx);
-        const targetMatchText = item.str.substring(startIdx, startIdx + queryLength);
-
-        const unscaledLeftOffset = metricMeasurer.measureText(textBeforeMatch).width;
-        const unscaledMatchWidth = metricMeasurer.measureText(targetMatchText).width;
-
-        const leftOffset = unscaledLeftOffset * scalingRatio;
-        const matchWidth = unscaledMatchWidth * scalingRatio;
-
-        const highlightLeft = tx[4] + leftOffset;
-        const highlightTop = tx[5] - (height * 0.82);
-
-        // Padding boundaries to ensure coverage
-        const paddedX = highlightLeft - padding;
-        const paddedY = highlightTop - padding;
-        const paddedWidth = matchWidth + (padding * 2);
-        const paddedHeight = height + (padding * 2);
-
-        // Constructing redaction rectangle data
-        return {
-            id: `rect-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            type: 'rect',
-            x: Math.max(0, paddedX),
-            y: Math.max(0, paddedY),
-            width: paddedWidth,
-            height: paddedHeight,
-            color: activeColor,
-            pageId: pageObj.id
-        };
-    });
-
-    executeAction(new RedactAllAction(dataList));
+    // Updating button active state
+    skipFirstLetter ? skipFirstBtn.classList.add('active') : skipFirstBtn.classList.remove('active');
 });
 
 // Zoom Selector Element Listener Handler
@@ -1597,10 +1632,66 @@ zoomInput.addEventListener('blur', () => {
     }
 });
 
+// Undoing last action by removing it from undo stack, calling it's undo function and adding it to the redo stack
+function undoAction() {
+    if (undoStack.length === 0) return;
+
+    // If there's an active textbox, removing it instead of undoing action from stack
+    if (activeTextboxEl && document.activeElement === activeTextboxEl) {
+        isCancelingText = true;
+        activeTextboxEl.blur();
+        isCancelingText = false;
+        return;
+    }
+
+    // Removing action from stack
+    const actionToUndo = undoStack.pop();
+    const targetIndex = actionToUndo.undo();
+
+    
+    if (actionToUndo.type === 'add-file') {
+        // If the undone action is file adding we clear the redo list since that action cannot be redone due to reloading matching issues
+        redoStack = [];
+    } else {
+        // Otherwise adding undone action to redo stack
+        redoStack.push(actionToUndo);
+    }
+
+    // Jumping to undo location
+    if (targetIndex + 1 !== pageNum) jumpToPage(targetIndex);
+
+    if (undoStack.length === 0) changeStateLoaded(false);
+    //console.log(undoStack);
+}
+
+// Redoing last action by removing it from redo stack and executing it
+function redoAction() {
+    if (redoStack.length === 0) return;
+
+    if (undoStack.length === 0) changeStateLoaded(true);
+
+    // Removing action from stack
+    const actionToRedo = redoStack.pop();
+    executeAction(actionToRedo, false);
+
+    //console.log(redoStack);
+}
+
 // keyboard shortcut action listener
 document.addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey) {
         switch(e.code) {
+            // Undo: ctrl + Z
+            case 'KeyZ':
+                e.preventDefault();
+                undoAction();
+                break;
+            
+            // Redo: ctrl + Y
+            case 'KeyY':
+                redoAction();
+                break;
+
             // Add file: ctrl + O
             case 'KeyO':
                 e.preventDefault();
@@ -1612,8 +1703,9 @@ document.addEventListener('keydown', (e) => {
                 if (!document.getElementById('clear-btn').classList.contains('disabled') && confirm(translations[lang]['clearAllWarn'])) changeStateLoaded(false);
                 break;
             
-            // Export: ctrl + E
+            // Export: ctrl + E/S
             case 'KeyE':
+            case 'KeyS':
                 e.preventDefault();
                 exportPDF();
                 break;

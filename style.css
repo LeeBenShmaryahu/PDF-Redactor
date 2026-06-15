@@ -451,7 +451,7 @@ body {
     left: 0;
     overflow: hidden;
     pointer-events: none;
-    z-index: 1;
+    z-index: 4;
 }
 
 .textLayer {
@@ -483,11 +483,12 @@ body {
     background-color: rgba(255, 150, 0, 0.4);
     border-radius: 2px;
     pointer-events: none;
+    z-index: 4;
 }
 
 .pdf-highlight-match.current-match {
     background-color: rgba(255, 68, 0, 0.65) !important;
-    z-index: 3;
+    z-index: 5;
 }
 
 .pdf-redaction-layer {
