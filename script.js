@@ -160,6 +160,7 @@ const translations = {
         exportErr: 'An error occurred while exporting the PDF.',
         langTip: 'Switch Language',
         helpTip: 'Help',
+        helpLink: 'https://github.com/LeeBenShmaryahu/PDF-Redactor/blob/main/README.md',
         pages: 'pages',
         pagesOf: 'of',
         redactCurrentTip: 'Redact current match',
@@ -192,6 +193,7 @@ const translations = {
         exportErr: 'שגיאה בייצוא הקובץ.',
         langTip: 'החלף שפה',
         helpTip: 'עזרה',
+        helpLink: 'https://github.com/LeeBenShmaryahu/PDF-Redactor/blob/main/READMEHEBREW.md',
         pages: 'דפים',
         pagesOf: 'מתוך',
         redactCurrentTip: 'השחר התאמה זאת',
@@ -246,6 +248,7 @@ function applyLanguage(l=null) {
     document.getElementById('lang-btn').innerText = l;
     document.getElementById('lang-btn').dataset.tooltip = t.langTip;
     document.getElementById('help-btn').dataset.tooltip = t.helpTip;
+    document.getElementById('help-btn').href = t.helpLink;
     document.getElementById('pages-total-text').innerText = t.pages;
     document.getElementById('pages-total-text-of').innerText = t.pagesOf;
     document.getElementById('redact-current-btn').dataset.tooltip = t.redactCurrentTip;
