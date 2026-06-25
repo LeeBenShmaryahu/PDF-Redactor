@@ -10,6 +10,7 @@ This web app was developed entirely by myself, you may contact me for any issues
 - **Add File** (ctrl + O) - loads the uploaded PDF file into the site. If a file is already loaded, loading an additional file will append it to the bottom of the current document. This can be used for merging multiple files.
 - **Clear all** (ctrl + del) - clears all currently loaded PDF pages.
 - **Export** (ctrl + E / ctrl + S) - exports a copy of the PDF as it is currently loaded in the site with all the changes that were made.
+- While exporting, a menu will pop up which allows choosing the export resolution scale (higher resolutions look better but have larger file sizes), as well as adding automatic page numbering.
 - **Page Delete** - pressing the trash icon to the top right of a page will delete it.
 - **Page Rearranging** - dragging the icon on the middle right of a page will allow the user to scroll to a new position on the document, releasing the drag will move the dragged page to this location.
 

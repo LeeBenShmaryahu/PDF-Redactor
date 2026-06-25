@@ -2,15 +2,20 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 const PAGE_LOAD_RANGE = 5;
 const HEADER_OFFEST = 118;
+const MAX_UNDO_STACK_SIZE = 40;
 
 // General pdf
 let loadedState = false;
 let pdfPages = [];
 let pageNum = 0;
-let currentZoom = 1.0;
+let currentZoom = parseFloat(localStorage.getItem('pdf_zoom')) || 1.0;
 let originalPdfBytes = null;
 let isExporting = false;
 let originalFileName = 'document.pdf';
+let loadTimeout = null;
+let currentLoadSequenceId = 0;
+let currentBackgroundIndexId = 0;
+let exportPreviewIndex = 0;
 
 // Search
 let currentSearchQuery = '';
@@ -84,6 +89,15 @@ function executeAction(actionInstance, newAction) {
     if (newAction) {
         // If a new action (not a redo) was executed, clearing redo list
         redoStack = [];
+
+        // Capping undo stack size
+        if (undoStack.length > MAX_UNDO_STACK_SIZE) {
+            const evictedAction = undoStack.shift();
+
+            if (evictedAction && evictedAction.deletedPageObj) {
+                evictedAction.deletedPageObj = null; 
+            }
+        }
     } else {
         // Jumping to page of re-done action if not already on that page
         if (targetIndex + 1 !== pageNum) jumpToPage(targetIndex);
@@ -181,7 +195,29 @@ const translations = {
         noPdfLbl: 'Click to select a file or drag and drop it here',
         redactAllWarning: 'WARNING! Redact all is NOT guarenteed to find all instances of matching text, do not rely on it solely!',
         logoOne: 'Product of The Innovation and Information Management Department',
-        logoTwo: 'Developed by Lee Ben Shmaryahu'
+        logoTwo: 'Developed by Lee Ben Shmaryahu',
+        exportSettings: 'Export Settings',
+        exportRes: {
+            title: 'Export Resolution Scale',
+            1: '1x (Standard)',
+            1.5: '1.5x (Enhanced)',
+            2: '2x (High Quality)',
+            3: '3x (Print Quality)',
+            desc: 'Higher scales produce sharper text and redactions but increase the final file size.'
+        },
+        exportNums: {
+            title: 'Add Page Numbers',
+            desc: 'Automatically stamp page numbers on the exported PDF pages.',
+            posTitle: 'Number Position',
+            topleft: 'Top Left',
+            topcenter: 'Top Center',
+            topright: 'Top Right',
+            bottomleft: 'Bottom Left',
+            bottomcenter: 'Bottom Center',
+            bottomright: 'Bottom Right'
+        },
+        exportPage: 'Page',
+        exportDoc: 'Export Document'
     },
     HE: {
         title: 'משחיר PDF',
@@ -214,7 +250,29 @@ const translations = {
         noPdfLbl: 'לחץ לבחירת קובץ או גרור קובץ לכאן',
         redactAllWarning: 'שימו לב! השחר הכל לא מחוייב למצוא את כל ההתאמות, אל תסתמכו עליו בלבד!',
         logoOne: 'מוצר של תחום החדשנות וניהול הידע',
-        logoTwo: 'פותח ע"י לי בן שמריהו'
+        logoTwo: 'פותח ע"י לי בן שמריהו',
+        exportSettings: 'הגדרות הצאה',
+        exportRes: {
+            title: 'גודל רזולוציית הצאה',
+            1: '1x (רגיל)',
+            1.5: '1.5x (מוגבר)',
+            2: '2x (איכות גבוהה)',
+            3: '3x (איכות הדפסה)',
+            desc: 'רזולוציות גדולות יותר יוצרות טקסט והשחרות ברורות יותר אך מעלות את גודל הקובץ.'
+        },
+        exportNums: {
+            title: 'הוסף מספור דפים',
+            desc: 'מוסיףבאופן אוטומטי מספור לדפים בקובץ המיוצא.',
+            posTitle: 'מיקום מספר',
+            topleft: 'שמאל למעלה',
+            topcenter: 'מרכז למעלה',
+            topright: 'ימין למעלה',
+            bottomleft: 'שמאל למטה',
+            bottomcenter: 'מרכז למטה',
+            bottomright: 'ימין למטה'
+        },
+        exportPage: 'דף',
+        exportDoc: 'יצא מסמך'
     }
 };
 applyLanguage(lang);
@@ -269,6 +327,16 @@ function applyLanguage(l=null) {
     document.getElementById('no-pdf-lbl').innerText = t.noPdfLbl;
     document.getElementById('logo-line-1').innerText = t.logoOne;
     document.getElementById('logo-line-2').innerText = t.logoTwo;
+    document.getElementById('export-title-lbl').innerText = t.exportSettings;
+    document.getElementById('export-scale-lbl').innerText = t.exportRes.title;
+    for (let opt of document.getElementById('export-scale-select').children) {opt.innerText = t.exportRes[opt.value]};
+    document.getElementById('export-scale-help').innerText = t.exportRes.desc;
+    document.getElementById('export-numbers-lbl').innerText = t.exportNums.title;
+    document.getElementById('export-numbers-help').innerText = t.exportNums.desc;
+    document.getElementById('export-position-lbl').innerText = t.exportNums.posTitle;
+    for (let opt of document.getElementById('export-position-select').children) {opt.innerText = t.exportNums[opt.value.replace('-', '')]};
+    document.getElementById('preview-current-lbl').innerText = t.exportPage;
+    document.getElementById('final-export-btn').innerText = t.exportDoc;
 }
 
 
@@ -278,28 +346,37 @@ const observerOptions = {
     root: document.getElementById('pdf-container'),
     threshold: 0.5
 };
+let loadAnimationFrame = null;
 const pageObserver = new IntersectionObserver((entries) => {
+    let lastIntersectingIndex = -1;
+
     entries.forEach(entry => {
         if (entry.isIntersecting) {
-            // Finding index of page in pages list
             const pageIndex = pdfPages.findIndex(p => p.id === entry.target.id);
-
             if (pageIndex !== -1) {
-                pageNum = pageIndex + 1;
-                PAGE_NUM_INPUT.value = pageNum;
-                loadPagesInRange();
+                // Tracking the most recent visible page index in this observation cycle
+                lastIntersectingIndex = pageIndex;
             }
         }
     });
+
+    if (lastIntersectingIndex !== -1) {
+        pageNum = lastIntersectingIndex + 1;
+        PAGE_NUM_INPUT.value = pageNum;
+
+        // Debouncing the heavy page loading logic to ignore pages flew past during rapid jumps
+        if (loadTimeout) clearTimeout(loadTimeout);
+        loadTimeout = setTimeout(() => {
+            loadPagesInRange();
+        }, 50); 
+    }
 }, observerOptions);
 
 
 // Loading new pages from pdf file
 async function loadPDF(file) {
-    // Saving file name
     originalFileName = file.name || 'document.pdf';
 
-    // Converting file to ArrayBuffer for local processing and loading the document
     const arrayBuffer = await file.arrayBuffer();
     originalPdfBytes = arrayBuffer.slice(0);
     const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
@@ -309,36 +386,37 @@ async function loadPDF(file) {
     changeStateLoaded(true);
     executeAction(new AddFileAction(pdfPages.length, file), true);
 
-    // Iterating through pages and adding them to the pages list
+    // Locking in a unique ID for this specific document load instance
+    currentBackgroundIndexId++;
+    const indexId = currentBackgroundIndexId;
+
+    // Loop through document layout footprints rapidly
     for (let i = 1; i <= pdf.numPages; i++) {
         const pageProxy = await pdf.getPage(i);
         const viewport = pageProxy.getViewport({ scale: currentZoom });
-
         const id = `page-${Date.now()}-${i}`;
 
-        // Creating page parent wrapper
+        // Wrapper
         const wrapper = document.createElement('div');
         wrapper.className = 'pdf-page-wrapper';
 
-        // Creating page element
+        //Main page element
         const pageEl = document.createElement('div');
         pageEl.className = 'pdf-page-skeleton';
         pageEl.id = id;
-        
-        // Setting box size to match page size
         pageEl.style.width = `${viewport.width}px`;
         pageEl.style.height = `${viewport.height}px`;
 
-        // Creating right sidebar element container
+        // Sidebar element
         const sidebarEl = document.createElement('div');
         sidebarEl.className = 'pdf-page-sidebar';
         sidebarEl.style.height = `${viewport.height}px`;
 
-        // Page number
+        // Page number indicator
         const numIndicator = document.createElement('div');
         numIndicator.className = 'sidebar-page-num';
 
-        // Delete button
+        // Page delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'sidebar-delete-btn';
         deleteBtn.innerHTML = '<img src="./assets/trash-icon.svg" style="width: 50px; height: 50px;" alt="icon">';
@@ -348,39 +426,26 @@ async function loadPDF(file) {
             executeAction(new DeletePageAction(id), true);
         });
 
-        // Drag Handler
+        // Page dragger
         const dragHandle = document.createElement('div');
         dragHandle.className = 'sidebar-drag-handle';
         dragHandle.innerHTML = '<img src="./assets/drag-icon.svg" style="width: 30px; height: 30px;" alt="icon" draggable="false">';
-
-        // Attaching custom dragging listener
         dragHandle.addEventListener('mousedown', (e) => {
             const pageObj = pdfPages.find(p => p.id === id);
-            if (pageObj) {
-                initiatePageDrag(e, pageObj);
-            }
+            if (pageObj) initiatePageDrag(e, pageObj);
         });
 
         sidebarEl.appendChild(numIndicator);
         sidebarEl.appendChild(deleteBtn);
         sidebarEl.appendChild(dragHandle);
-
-        // Assembling sidebar and page skeleton into wrapper
         wrapper.appendChild(pageEl);
         wrapper.appendChild(sidebarEl);
 
+        // Observing page and adding it to DOM
         pageObserver.observe(pageEl);
         container.appendChild(wrapper);
 
-        // Extracting text data items immediately for this specific page's index
-        const textContent = await pageProxy.getTextContent();
-        const textIndex = textContent.items.map(item => ({
-            str: item.str,
-            transform: item.transform,
-            width: item.width,
-            height: item.height
-        }));
-
+        // Pushing with null text values instantly to let background workers fetch them later
         pdfPages.push({
             id: id,
             proxy: pageProxy,
@@ -389,13 +454,59 @@ async function loadPDF(file) {
             wrapper: wrapper,
             element: pageEl,
             sidebar: sidebarEl,
-            textIndex: textIndex,
+            textIndex: null,
+            textContentCache: null,
             redactions: []
         });
     }
 
     updatePageCount();
     jumpToPage(lastPageIndex);
+
+    // Execute the non-blocking background crawler pass
+    indexDocumentTextBackground(indexId);
+}
+
+
+// Function for populating text indexes of pages in the background to reduce loading bottleneck
+async function indexDocumentTextBackground(indexId) {
+    for (let i = 0; i < pdfPages.length; i++) {
+        // Aborting processing immediately if the document changed or closed
+        if (indexId !== currentBackgroundIndexId) return;
+
+        const pageObj = pdfPages[i];
+
+        if (!pageObj.textIndex) {
+            try {
+                // Pre-warming the cache for loadPage() simultaneously
+                if (!pageObj.textContentCache) {
+                    pageObj.textContentCache = await pageObj.proxy.getTextContent();
+                }
+
+                pageObj.textIndex = pageObj.textContentCache.items.map(item => ({
+                    str: item.str,
+                    transform: item.transform,
+                    width: item.width,
+                    height: item.height
+                }));
+
+                // If the user has an active search text running, updating matching rules live
+                if (currentSearchQuery && currentSearchQuery.trim()) {
+                    updateMatchesList();
+                    if (pageObj.isLoaded) {
+                        applyHighlights(pageObj);
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed background text index routine on page ${i + 1}:`, err);
+            }
+        }
+
+        // Periodically yielding control back to the main UI thread loop to ensure a fluid 60 FPS experience
+        if (i % 3 === 0) {
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+    }
 }
 
 
@@ -405,20 +516,34 @@ function jumpToPage(index) {
     if (targetPageObj && targetPageObj.element) {
         const elementPosition = targetPageObj.element.offsetTop;
         const offsetPosition = elementPosition - HEADER_OFFEST;
+        
+        // Clearing pending scroll-induced loads immediately
+        if (loadTimeout) clearTimeout(loadTimeout);
+        
+        // Proactively synchronizing state variables immediately
+        pageNum = index + 1;
+        PAGE_NUM_INPUT.value = pageNum;
+        
+        // Scrolling to position
         container.scrollTo({
             top: offsetPosition,
             behavior: 'auto'
         });
+        
+        // Forcing evaluation of the target range
+        loadPagesInRange();
     }
 }
 
 
 // Loading a specific page by generating its canvas and text layer
 async function loadPage(pageObj) {
-    // Skipping loading already loaded pages
-    if (pageObj.isLoaded) return;
+    // Preventing duplicate overlapping render passes on a page already loading
+    if (pageObj.isLoaded || pageObj.isLoading) return;
 
-    // 1. Setup Canvas
+    pageObj.isLoading = true;
+
+    // Setting up Canvas
     const canvas = document.createElement('canvas');
     canvas.className = 'pdf-page-canvas';
     const context = canvas.getContext('2d');
@@ -432,67 +557,97 @@ async function loadPage(pageObj) {
     };
 
     try {
-        // Waiting for canvas to visually render
-        await pageObj.proxy.render(renderContext).promise;
+        // Storing the canvas render task to allow canceling it mid-operation if unviewed
+        pageObj.renderTask = pageObj.proxy.render(renderContext);
+        await pageObj.renderTask.promise;
+        pageObj.renderTask = null;
 
-        // Setting up highlight Layer container
+        if (!pageObj.isLoading) return;
+
+        // Highlight layer
         const highlightLayerDiv = document.createElement('div');
         highlightLayerDiv.className = 'pdf-highlight-layer';
         highlightLayerDiv.style.width = `${pageObj.viewport.width}px`;
         highlightLayerDiv.style.height = `${pageObj.viewport.height}px`;
 
-        // Setting up Redaction Layer container
+        // Redaction layer
         const redactionLayerDiv = document.createElement('div');
         redactionLayerDiv.className = 'pdf-redaction-layer';
         redactionLayerDiv.style.width = `${pageObj.viewport.width}px`;
         redactionLayerDiv.style.height = `${pageObj.viewport.height}px`;
-        
-        // Setting up Text Layer
+
+        // Text layer
         const textLayerDiv = document.createElement('div');
         textLayerDiv.className = 'textLayer';
-
-        // Matching the dimensions of the canvas
         textLayerDiv.style.width = `${pageObj.viewport.width}px`;
         textLayerDiv.style.height = `${pageObj.viewport.height}px`;
         textLayerDiv.style.setProperty('--scale-factor', pageObj.viewport.scale);
 
-        // Fetching and Rendering Text
-        const textContent = await pageObj.proxy.getTextContent();
-        
-        // Adding to DOM before rendering text
+        // Retrieving text metrics or parsing them via worker if missing
+        if (!pageObj.textContentCache) {
+            pageObj.textContentCache = await pageObj.proxy.getTextContent();
+        }
+        const textContent = pageObj.textContentCache;
+
+        if (!pageObj.isLoading) return;
+
         pageObj.element.appendChild(canvas);
         pageObj.element.appendChild(highlightLayerDiv);
         pageObj.element.appendChild(redactionLayerDiv);
         pageObj.element.appendChild(textLayerDiv);
 
-        await pdfjsLib.renderTextLayer({
+        // Rendering text layer
+        pageObj.textLayerTask = pdfjsLib.renderTextLayer({
             textContentSource: textContent,
             container: textLayerDiv,
             viewport: pageObj.viewport,
             textDivs: []
-        }).promise;
+        });
+        await pageObj.textLayerTask.promise;
+        pageObj.textLayerTask = null;
+
+        // Final verification check before concluding configuration setup
+        if (!pageObj.isLoading) return;
 
         // Finalizing state
         pageObj.element.classList.add('pdf-page-rendered');
         pageObj.isLoaded = true;
+        pageObj.isLoading = false;
 
         applyHighlights(pageObj);
         applyRedactions(pageObj);
     } catch (error) {
-        console.error('Error rendering page or text layer:', error);
+        pageObj.isLoading = false;
+        pageObj.renderTask = null;
+        pageObj.textLayerTask = null;
+        
+        // Catching and suppressing expected pdf.js cancellation exceptions
+        if (error.name !== 'RenderingCancelledException' && !error.message?.includes('cancelled')) {
+            console.error('Error rendering page or text layer:', error);
+        }
     }
 }
 
 
 // Unloading a specific page
 function unloadPage(pageObj) {
-    // Can't unload pages that aren't loaded
-    if (!pageObj.isLoaded) return;
+    // Terminating canvas rendering pipelines immediately
+    if (pageObj.renderTask) {
+        pageObj.renderTask.cancel();
+        pageObj.renderTask = null;
+    }
+    // Terminating text layer mapping pipelines immediately
+    if (pageObj.textLayerTask && typeof pageObj.textLayerTask.cancel === 'function') {
+        pageObj.textLayerTask.cancel();
+        pageObj.textLayerTask = null;
+    }
 
+    pageObj.isLoading = false;
+
+    // Only clearing assets if the page was previously rendered or marked loaded
     pageObj.element.innerHTML = '';
     pageObj.element.classList.remove('pdf-page-rendered');
     pageObj.isLoaded = false;
-    //console.log('unloaded ' + pageObj.id);
 }
 
 
@@ -505,7 +660,7 @@ function applyHighlights(pageObj) {
     // Resetting the highlight layer for this page
     highlightLayerDiv.innerHTML = '';
 
-    if (!currentSearchQuery || !currentSearchQuery.trim()) return;
+    if (!currentSearchQuery || !currentSearchQuery.trim() || !pageObj.textIndex) return;
 
     const queryLower = currentSearchQuery.toLowerCase();
     const scale = pageObj.viewport.scale;
@@ -644,6 +799,7 @@ function updateMatchesList() {
 
     // Looping through document in order
     pdfPages.forEach(pageObj => {
+        if (!pageObj.textIndex) return;
         pageObj.textIndex.forEach(item => {
             const strLower = item.str.toLowerCase();
             let startIdx = 0;
@@ -742,30 +898,45 @@ function updatePageCount() {
 
 
 // Loading all pages in range from current page, and unloading the rest
-function loadPagesInRange() {
-    const total = pdfPages.length;
-    const currentIndex = pageNum - 1;
+async function loadPagesInRange() {
+    // Increment generation ID to instantly invalidate any previously running sequence loops
+    currentLoadSequenceId++;
+    const sequenceId = currentLoadSequenceId;
 
-    // Processing current page
-    if (currentIndex >= 0 && currentIndex < total) {
-        loadPage(pdfPages[currentIndex]);
-    }
+    const start = Math.max(0, pageNum - 1 - PAGE_LOAD_RANGE);
+    const end = Math.min(pdfPages.length - 1, pageNum - 1 + PAGE_LOAD_RANGE);
 
-    // Expanding outwards
-    for (let offset = 1; offset <= PAGE_LOAD_RANGE; offset++) {
-        const next = currentIndex + offset;
-        const prev = currentIndex - offset;
-
-        if (next < total) loadPage(pdfPages[next]);
-        if (prev >= 0) loadPage(pdfPages[prev]);
-    }
-
-    // Unloading the rest
-    pdfPages.forEach((pageObj, idx) => {
-        if (Math.abs((idx + 1) - pageNum) > PAGE_LOAD_RANGE) {
-            unloadPage(pageObj);
+    // 1. Instantly clean up out-of-bounds pages to free memory pipelines
+    for (let i = 0; i < pdfPages.length; i++) {
+        if (i < start || i > end) {
+            unloadPage(pdfPages[i]);
         }
+    }
+
+    // 2. Identify the specific target pages that require rendering configuration
+    const pagesToLoad = [];
+    for (let i = start; i <= end; i++) {
+        if (!pdfPages[i].isLoaded && !pdfPages[i].isLoading) {
+            pagesToLoad.push(pdfPages[i]);
+        }
+    }
+
+    // 3. Sort targets by physical proximity to the user's current viewpoint (closest first)
+    const centerIndex = pageNum - 1;
+    pagesToLoad.sort((a, b) => {
+        const distA = Math.abs(pdfPages.indexOf(a) - centerIndex);
+        const distB = Math.abs(pdfPages.indexOf(b) - centerIndex);
+        return distA - distB;
     });
+
+    // 4. Process the queue sequentially to keep the main thread fully responsive
+    for (const pageObj of pagesToLoad) {
+        // If the user scrolls or jumps during execution, abort this entire stale queue immediately
+        if (sequenceId !== currentLoadSequenceId) return;
+
+        // Load the page and wait for it to complete before moving to the next neighbor
+        await loadPage(pageObj);
+    }
 }
 
 
@@ -839,7 +1010,6 @@ function handleScrollLoop() {
 
 // Function for updates when changing between document loaded state
 const pageInput = document.getElementById('page-num-input');
-const zoomInput = document.getElementById('zoom-input');
 function changeStateLoaded(isLoaded) {
     if (isLoaded === loadedState) {
         return;
@@ -862,6 +1032,9 @@ function changeStateLoaded(isLoaded) {
         pageInput.value = 1;
         pageNum = 1;
     } else {
+        // Increment token to invalidate any running background index loops instantly
+        currentBackgroundIndexId++;
+
         // Showing drop zone and hiding pages container
         document.getElementById('drop-zone').classList.remove('hidden');
         container.classList.add('hidden');
@@ -890,10 +1063,6 @@ function changeStateLoaded(isLoaded) {
         currentSearchQuery = '';
         updateMatchesList();
 
-        // Zoom reset
-        zoomInput.value = '100%';
-        currentZoom = 1.0;
-
         // Disabling selected tool
         swapTool();
     }
@@ -907,6 +1076,9 @@ function changeZoom(newZoom) {
     const oldZoom = currentZoom;
     currentZoom = newZoom;
     const scaleRatio = currentZoom / oldZoom;
+
+    // Saving new zoom to local storage
+    localStorage.setItem('pdf_zoom', currentZoom);
 
     // Capturing current scroll location before modifying elements
     const oldScrollTop = container.scrollTop;
@@ -1613,6 +1785,8 @@ skipFirstBtn.addEventListener('click', () => {
 });
 
 // Zoom Selector Element Listener Handler
+const zoomInput = document.getElementById('zoom-input');
+zoomInput.value = `${currentZoom * 100}%`;
 zoomInput.addEventListener('change', () => {
     // Stripping trailing percentages and parsing numeric entries
     let val = zoomInput.value.replace('%', '').trim();
@@ -1710,7 +1884,7 @@ document.addEventListener('keydown', (e) => {
             case 'KeyE':
             case 'KeyS':
                 e.preventDefault();
-                exportPDF();
+                toggleExportMenu(true);
                 break;
             
             // Rectangle tool: ctrl + alt + R
@@ -1732,18 +1906,141 @@ document.addEventListener('keydown', (e) => {
 });
 
 const exportBtn = document.getElementById('export-btn');
-exportBtn.addEventListener('click', exportPDF);
+const exportMenu = document.getElementById('export-modal-overlay');
+const finalExportBtn = document.getElementById('final-export-btn');
+const previewNumLabel = document.getElementById('export-preview-num');
+
+exportBtn.addEventListener('click', () => {toggleExportMenu(true)});
+
+function toggleExportMenu(state) {
+    if (state) {
+        exportMenu.classList.remove('hidden');
+        exportPreviewIndex = 0;
+        updateExportPreview();
+    } else {
+        exportMenu.classList.add('hidden');
+    }
+}
+
+// Rendering the currently selected page and its active redactions inside the export preview container.
+async function updateExportPreview() {
+    if (pdfPages.length === 0) return;
+
+    // Boundary protection safety checks
+    if (exportPreviewIndex < 0) exportPreviewIndex = 0;
+    if (exportPreviewIndex >= pdfPages.length) exportPreviewIndex = pdfPages.length - 1;
+
+    // Syncing the DOM page counters
+    if (previewNumLabel) {
+        previewNumLabel.innerText = exportPreviewIndex + 1;
+    }
+
+    const container = document.querySelector('.preview-canvas-container');
+
+    // Clearing old canvas instances to prevent DOM leakage
+    container.innerHTML = '';
+
+    const pageObj = pdfPages[exportPreviewIndex];
+    if (!pageObj || !pageObj.proxy) return;
+
+    // Creating a clean preview canvas element
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    container.appendChild(canvas);
+
+    // Calculating responsive scale factor to fit 210px layout viewport width
+    const baseViewport = pageObj.proxy.getViewport({ scale: 1.0 });
+    const previewScale = 210 / baseViewport.width;
+    const viewport = pageObj.proxy.getViewport({ scale: previewScale });
+
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+
+    const renderContext = {
+        canvasContext: ctx,
+        viewport: viewport
+    };
+
+    try {
+        // Rendering the base PDF background layer
+        await pageObj.proxy.render({
+            canvasContext: ctx,
+            viewport: viewport
+        }).promise;
+
+        const scaleFactor = viewport.width / pageObj.viewport.width;
+        
+        ctx.save();
+        ctx.scale(scaleFactor, scaleFactor);
+
+        // Rendering the redactions based on the 3 types
+        pageObj.redactions.forEach(item => {
+            ctx.save();
+            if (item.type === 'rect') {
+                ctx.fillStyle = item.color;
+                ctx.fillRect(item.x, item.y, item.width, item.height);
+            } 
+            else if (item.type === 'paint') {
+                ctx.strokeStyle = item.color;
+                ctx.lineWidth = item.size;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.stroke(new Path2D(item.path));
+            } 
+            else if (item.type === 'text') {
+                ctx.fillStyle = item.color;
+                ctx.font = `${item.size}px "${item.font || 'sans-serif'}"`;
+                ctx.textBaseline = 'top';
+                
+                // Handling multiline formatting
+                const lines = item.text.split('\n');
+                lines.forEach((line, index) => {
+                    ctx.fillText(line, item.x, item.y + (index * item.size * 1.2));
+                });
+            }
+            ctx.restore();
+        });
+
+        ctx.restore();
+
+    } catch (error) {
+        console.error('Export menu preview rendering exception:', error);
+    }
+}
+
+document.getElementById('preview-prev-btn')?.addEventListener('click', () => {
+    if (exportPreviewIndex > 0) {
+        exportPreviewIndex--;
+        updateExportPreview();
+    }
+});
+
+document.getElementById('preview-next-btn')?.addEventListener('click', () => {
+    if (pdfPages && exportPreviewIndex < pdfPages.length - 1) {
+        exportPreviewIndex++;
+        updateExportPreview();
+    }
+});
+
+document.getElementById('close-export-btn').addEventListener('click', () => {toggleExportMenu(false)});
+
+finalExportBtn.addEventListener('click', () => {exportPDF(
+    document.getElementById('export-scale-select').value,
+    document.getElementById('export-page-numbers-toggle').checked,
+    document.getElementById('export-position-select').value
+)});
 
 // Secure PDF Export Pipeline
-async function exportPDF() {
+async function exportPDF(exportScale, addNums, numsPosition) {
+    console.log()
     if (isExporting || !loadedState || pdfPages.length === 0) return;
 
-    const originalText = exportBtn.innerText;
+    const originalText = finalExportBtn.innerText;
     isExporting = true;
     
     // Toggling processing state UI
-    exportBtn.innerText = translations[lang]['exporting'];
-    exportBtn.classList.add('disabled');
+    finalExportBtn.innerText = translations[lang]['exporting'];
+    finalExportBtn.classList.add('disabled');
 
     try {
         // Dynamically injecting pdf-lib if missing
@@ -1766,17 +2063,18 @@ async function exportPDF() {
         }
 
         // Iterating over live app pages array
-        for (const pageObj of pdfPages) {
+        for (let i = 0; i < pdfPages.length; i++) {
+            const pageObj = pdfPages[i];
             const hasRedactions = pageObj.redactions && pageObj.redactions.length > 0;
+            let page = null;
 
             if (!hasRedactions && srcDoc) {
                 // If a page has no redactions, we use the original page content
                 const origIndex = pageObj.proxy.pageNumber - 1;
-                const [copiedPage] = await finalPdfDoc.copyPages(srcDoc, [origIndex]);
-                finalPdfDoc.addPage(copiedPage);
+                [copiedPage] = await finalPdfDoc.copyPages(srcDoc, [origIndex]);
+                page = finalPdfDoc.addPage(copiedPage);
             } else {
                 // Flattening pages containing redactions
-                const exportScale = 2.0; // Rendering at 2x resolution to maintain print sharpness
                 const viewport = pageObj.proxy.getViewport({ scale: exportScale });
                 
                 const canvas = document.createElement('canvas');
@@ -1832,14 +2130,61 @@ async function exportPDF() {
                 
                 // Creating blank document canvas shell page
                 const baseViewport = pageObj.proxy.getViewport({ scale: 1.0 });
-                const newPage = finalPdfDoc.addPage([baseViewport.width, baseViewport.height]);
+                page = finalPdfDoc.addPage([baseViewport.width, baseViewport.height]);
                 
                 // Overlaying image snapshot across page
-                newPage.drawImage(embeddedImg, {
+                page.drawImage(embeddedImg, {
                     x: 0,
                     y: 0,
                     width: baseViewport.width,
                     height: baseViewport.height
+                });
+            }
+
+            // Adding page numbers
+            if (addNums) {
+                const pageNumText = String(i + 1);
+                const fontSize = 12;
+                const padding = 24;
+                const baseViewport = pageObj.proxy.getViewport({ scale: 1.0 });
+                const approxTextWidth = pageNumText.length * (fontSize * 0.6);
+                
+                let x = padding;
+                let y = padding;
+
+                switch (numsPosition) {
+                    case 'top-left':
+                        x = padding;
+                        y = baseViewport.height - padding - fontSize;
+                        break;
+                    case 'top-center':
+                        x = (baseViewport.width / 2) - (approxTextWidth / 2);
+                        y = baseViewport.height - padding - fontSize;
+                        break;
+                    case 'top-right':
+                        x = baseViewport.width - padding - approxTextWidth;
+                        y = baseViewport.height - padding - fontSize;
+                        break;
+                    case 'bottom-left':
+                        x = padding;
+                        y = padding;
+                        break;
+                    case 'bottom-center':
+                        x = (baseViewport.width / 2) - (approxTextWidth / 2);
+                        y = padding;
+                        break;
+                    case 'bottom-right':
+                    default:
+                        x = baseViewport.width - padding - approxTextWidth;
+                        y = padding;
+                        break;
+                }
+
+                page.drawText(pageNumText, {
+                    x: x,
+                    y: y,
+                    size: fontSize,
+                    color: PDFLib.rgb(0, 0, 0) 
                 });
             }
         }
@@ -1862,8 +2207,9 @@ async function exportPDF() {
         console.error('PDF Export engine failure pipeline interruption:', err);
         alert(translations[lang]['exportErr']);
     } finally {
-        exportBtn.innerText = originalText;
-        exportBtn.classList.remove('disabled');
+        finalExportBtn.innerText = originalText;
+        finalExportBtn.classList.remove('disabled');
         isExporting = false;
+        toggleExportMenu(false);
     }
 }

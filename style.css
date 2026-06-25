@@ -654,3 +654,200 @@ body {
 .toggle-lang {
     margin-inline-start: auto;
 }
+
+/* ==========================================================================
+   EXPORT MODAL OVERLAY & UI
+   ========================================================================== */
+.export-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(3px);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.export-modal {
+    background-color: var(--bg-light);
+    border-radius: 12px;
+    width: 750px;
+    max-width: 95vw;
+    height: 480px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    overflow: hidden;
+}
+
+.export-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+    background-color: white;
+    border-bottom: 1px solid var(--border-gray);
+}
+
+.export-modal-header h2 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-dark);
+}
+
+.export-modal-body {
+    display: flex;
+    flex-direction: row; /* Flex handles LTR/RTL mirroring automatically */
+    flex: 1;
+    padding: 24px;
+    gap: 32px;
+    overflow: hidden;
+}
+
+/* Left Side: Options */
+.export-options {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    overflow-y: auto;
+}
+
+.option-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.toggle-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.option-label {
+    font-weight: 600;
+    color: var(--text-dark);
+    font-size: 14px;
+}
+
+.helper-text {
+    margin: 0;
+    font-size: 12px;
+    color: #777;
+    line-height: 1.4;
+}
+
+.export-actions {
+    margin-top: auto;
+}
+
+#final-export-btn:hover {
+    background-color: #0056b3 !important;
+}
+
+/* Right Side: Preview */
+.export-preview {
+    flex: 1.2; /* Give the preview slightly more space */
+    background-color: #f1f3f5;
+    border-radius: 8px;
+    border: 1px solid var(--border-gray);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    overflow: hidden;
+}
+
+.preview-canvas-container {
+    flex: 1;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #808080; /* Matches your main body background */
+    border-radius: 4px;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.15);
+    overflow: hidden;
+}
+
+.preview-placeholder {
+    background-color: white;
+    width: 210px;
+    height: 297px; /* Rough A4 aspect ratio */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+}
+
+.preview-nav {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 16px;
+    font-size: 14px;
+    color: var(--text-dark);
+    font-weight: 500;
+}
+
+/* Custom UI Toggle Switch */
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ccc;
+    transition: .3s;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+}
+
+input:checked + .slider {
+    background-color: var(--accent-blue);
+}
+
+input:checked + .slider:before {
+    transform: translateX(20px);
+}
+
+.slider.round {
+    border-radius: 24px;
+}
+
+.slider.round:before {
+    border-radius: 50%;
+}
+
+[dir="rtl"] .preview-arrow {
+    transform: scaleX(-1);
+}
